@@ -1,0 +1,94 @@
+# ================================================================
+# app.saj  —  Sajon Multi-Cloud Infrastructure Example
+# Providers: Neon · AWS · Supabase
+#
+# Run:    sajon plan app.saj     (dry-run, no API calls)
+# Deploy: sajon up app.saj       (live provisioning)
+# CI/CD:  sajon ci github        (generate GitHub Actions)
+# ================================================================
+
+# ── Environment Variables ──────────────────────────────────────
+# NOTE: Set real secret values in your shell environment:
+#   export SECRET_KEY="your_actual_secret"
+# DO NOT hardcode real secrets here — this file is version controlled.
+
+ENV production {
+    APP_ENV:   "production"
+    LOG_LEVEL: "info"
+    DEBUG_MODE: "false"
+}
+
+# ── Neon Serverless Postgres (primary database) ────────────────
+
+RESOURCE user_db {
+    provider: "postgres"
+    version: 15
+    region: "us-east-1"
+    SCHEMA {
+        table: "users"
+        fields: ["id:int", "name:string", "email:string", "created_at:timestamp", "active:bool"]
+    }
+}
+
+# ── AWS RDS PostgreSQL (production-grade managed database) ─────
+
+RESOURCE production_db {
+    provider: "aws"
+    engine: "postgres"
+    size: "db.t3.micro"
+    region: "us-east-1"
+}
+
+# ── AWS EC2 Server (application compute layer) ─────────────────
+
+SERVER api_server {
+    provider: "aws"
+    instance_type: "t3.medium"
+    ami: "ami-0c55b159cbfafe1f0"
+    region: "us-east-1"
+}
+
+# ── AWS S3 Storage (media & asset bucket) ──────────────────────
+
+STORAGE media_bucket {
+    provider: "aws"
+    bucket: "sajon-media-prod"
+    region: "us-east-1"
+}
+
+# ── Supabase (staging database with Auth & Storage) ────────────
+
+RESOURCE staging_db {
+    provider: "supabase"
+    region: "ap-southeast-1"
+    SCHEMA {
+        table: "products"
+        fields: ["id:int", "title:string", "description:text", "price:float", "in_stock:bool", "created_at:timestamp"]
+    }
+}
+
+# ── HTTP API Endpoints ─────────────────────────────────────────
+
+ENDPOINT POST "/signup" {
+    RETURN "Success"
+}
+
+ENDPOINT GET "/health" {
+    RETURN "OK"
+}
+
+ENDPOINT GET "/users" {
+    RETURN "UserList"
+}
+
+# ── Background Workers ─────────────────────────────────────────
+
+WORKER email_dispatcher {
+    queue: "notifications"
+    concurrency: 4
+}
+
+WORKER report_builder {
+    queue: "reports"
+    concurrency: 2
+}

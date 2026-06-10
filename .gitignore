@@ -1,0 +1,54 @@
+# ╔══════════════════════════════════════════════════════════════╗
+# ║              Sajon Compiler — .gitignore                     ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+# ── Secrets & Generated Credentials ───────────────────────────────────────────
+sajon.env
+sajon.env.tmp
+.env
+.env.*
+*.env
+
+# ── State Files (contain live credentials — never commit) ──────────────────────
+sajon.lock
+
+# ── Generated Infrastructure Files ────────────────────────────────────────────
+docker-compose.yml
+
+# ── Compiled Binaries ──────────────────────────────────────────────────────────
+*.exe
+sajon
+sajon-linux-*
+sajon-darwin-*
+sajon-windows-*
+
+# ── Go build artifacts ─────────────────────────────────────────────────────────
+/vendor/
+*.test
+*.out
+/dist/
+/bin/
+
+# ── IDE & OS Files ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Test artifacts & internal test files ──────────────────────────────────────
+output.txt
+*.log
+tests/
+final_stress_test.ps1
+run_tests.ps1
+test_lock_feature.ps1
+tests/TEST_RESULTS.txt
+
+# ── Internal test/dev .saj files (not for users) ──────────────────────────────
+full_test.saj
+renamed.saj
+sajon_db.saj
+supabase_test.saj
