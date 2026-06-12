@@ -216,6 +216,20 @@ func (ce *CloudEmitter) ProvisionAll() error {
 			}
 			ce.Results = append(ce.Results, result)
 			provisioned++
+
+			// ── Schema Reconciliation on cached resource ──────────────────────
+			// The project already exists in sajon.lock but the user may have
+			// added new fields to the SCHEMA block.  RunMigrations diffs
+			// information_schema.columns and emits ALTER TABLE ADD COLUMN
+			// IF NOT EXISTS for any new fields found in the AST.
+			if schemas := collectSchemas(rs); len(schemas) > 0 && ce.apiKey != "" && cached.ConnectionString != "" {
+				ce.addLog(fmt.Sprintf("[⚡] Schema Reconciliation: checking for schema changes on cached resource '%s'...", rs.Name))
+				fmt.Printf("     [⚡] Schema Reconciliation: '%s' is cached — checking for new columns in SCHEMA block...\n", rs.Name)
+				if migErr := RunMigrations(cached.ConnectionString, schemas, rs.Name); migErr != nil {
+					ce.addLog(fmt.Sprintf("[⚠️ ] Schema reconciliation warning for '%s': %v", rs.Name, migErr))
+					fmt.Printf("     [⚠️ ] Schema reconciliation warning: %v\n", migErr)
+				}
+			}
 			continue
 		}
 

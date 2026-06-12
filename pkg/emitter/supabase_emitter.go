@@ -144,6 +144,22 @@ func (se *SupabaseEmitter) ProvisionAll() error {
 			}
 			se.Results = append(se.Results, result)
 			provisioned++
+
+			// ── Schema Reconciliation on cached resource ──────────────────────
+			// Even though the project already exists, the user may have added
+			// new fields to the SCHEMA block in their .saj file since the last
+			// 'sajon up' run.  RunMigrations now diffs information_schema.columns
+			// against the AST and issues ALTER TABLE ADD COLUMN IF NOT EXISTS
+			// for any new fields — making schema evolution fully declarative.
+			if schemas := collectSchemas(rs); len(schemas) > 0 && se.accessToken != "" && cached.ConnectionString != "" {
+				se.addLog(fmt.Sprintf("[⚡] Schema Reconciliation: checking for schema changes on cached resource '%s'...", rs.Name))
+				fmt.Printf("     [⚡] Schema Reconciliation: '%s' is cached — checking for new columns in SCHEMA block...\n", rs.Name)
+				if migErr := RunMigrations(cached.ConnectionString, schemas, rs.Name); migErr != nil {
+					// Non-fatal: log but continue.
+					se.addLog(fmt.Sprintf("[⚠️ ] Schema reconciliation warning for '%s': %v", rs.Name, migErr))
+					fmt.Printf("     [⚠️ ] Schema reconciliation warning: %v\n", migErr)
+				}
+			}
 			continue
 		}
 
