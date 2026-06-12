@@ -88,6 +88,7 @@ type ResourceStatement struct {
 	Name       string      // user-defined block identifier
 	Properties []Property  // ordered list of key-value pairs
 	Schema     *SchemaBlock // optional inline database schema (SCHEMA { ... })
+	Data       *DataBlock  // optional inline seed data (DATA { ... })
 }
 
 func (rs *ResourceStatement) statementNode() {}
@@ -105,6 +106,10 @@ func (rs *ResourceStatement) String() string {
 	if rs.Schema != nil {
 		out.WriteString(fmt.Sprintf("    SCHEMA → table: %s  fields: %s\n",
 			rs.Schema.Table, strings.Join(rs.Schema.Fields, ", ")))
+	}
+	if rs.Data != nil {
+		out.WriteString(fmt.Sprintf("    DATA → insert_into: %s  rows: %d\n",
+			rs.Data.InsertInto, len(rs.Data.Rows)))
 	}
 	return out.String()
 }
@@ -128,6 +133,31 @@ func (rs *ResourceStatement) String() string {
 type SchemaBlock struct {
 	Table  string   // destination table name, e.g. "users"
 	Fields []string // field descriptors, e.g. "id:int", "name:string"
+}
+
+// ── DataBlock ─────────────────────────────────────────────────────────────────
+
+// DataRow is an ordered list of column-name/value pairs for a single seed row.
+// Using a slice (not a map) preserves the declaration order in the .saj file,
+// which keeps generated INSERT column lists stable across compiler runs.
+type DataRow struct {
+	Columns []Property // ordered column-name : value pairs for this row
+}
+
+// DataBlock describes one or more seed rows to INSERT into a live table after
+// the schema migration has been applied.  Each INSERT uses ON CONFLICT DO
+// NOTHING so repeated 'sajon up' runs never produce duplicate rows.
+//
+// Syntax (inside a RESOURCE / DATABASE block):
+//
+//	DATA {
+//	    insert_into: "users"
+//	    row: { id: 1  name: "Alice"  email: "alice@example.com" }
+//	    row: { id: 2  name: "Bob"    email: "bob@example.com"   }
+//	}
+type DataBlock struct {
+	InsertInto string    // target table name, e.g. "users"
+	Rows       []DataRow // seed rows in declaration order
 }
 
 // ── EndpointStatement ─────────────────────────────────────────────────────────

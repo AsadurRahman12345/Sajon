@@ -207,6 +207,11 @@ func (p *Parser) parseResourceStatement() *ResourceStatement {
 			if schema := p.parseSchemaBlock(); schema != nil {
 				stmt.Schema = schema
 			}
+		} else if p.curTokenIs(lexer.TokenData) {
+			// Inline DATA block — parse seed rows and attach to the statement.
+			if data := p.parseDataBlock(); data != nil {
+				stmt.Data = data
+			}
 		} else if prop := p.parseProperty(); prop != nil {
 			stmt.Properties = append(stmt.Properties, *prop)
 		}
@@ -284,6 +289,68 @@ func (p *Parser) parseSchemaBlock() *SchemaBlock {
 	}
 	// curToken is now '}' (closing brace of SCHEMA block).
 	return schema
+}
+
+// parseDataBlock parses an inline DATA sub-block inside a RESOURCE or
+// DATABASE block.  Grammar:
+//
+//	DATA '{'
+//	    insert_into: STRING
+//	    row: '{' ( IDENTIFIER ':' VALUE )* '}'
+//	    ...
+//	'}'
+//
+// curToken is DATA when this function is called; it returns with curToken
+// positioned on the closing '}' of the DATA block.
+func (p *Parser) parseDataBlock() *DataBlock {
+	data := &DataBlock{}
+
+	// Consume the opening '{' of the DATA block.
+	if !p.expectPeek(lexer.TokenLBrace) {
+		return nil
+	}
+
+	p.nextToken() // advance into the block body
+	for !p.curTokenIs(lexer.TokenRBrace) && !p.curTokenIs(lexer.TokenEOF) {
+		if p.curTokenIs(lexer.TokenIdentifier) && p.curToken.Value == "insert_into" {
+			// insert_into: "table_name"
+			if !p.expectPeek(lexer.TokenColon) {
+				p.nextToken()
+				continue
+			}
+			if !p.expectPeek(lexer.TokenString) {
+				p.nextToken()
+				continue
+			}
+			data.InsertInto = p.curToken.Value
+
+		} else if p.curTokenIs(lexer.TokenIdentifier) && p.curToken.Value == "row" {
+			// row: { col: value col: value ... }
+			if !p.expectPeek(lexer.TokenColon) {
+				p.nextToken()
+				continue
+			}
+			if !p.expectPeek(lexer.TokenLBrace) {
+				p.nextToken()
+				continue
+			}
+			// Parse columns inside { ... }
+			var row DataRow
+			p.nextToken() // advance into the row body
+			for !p.curTokenIs(lexer.TokenRBrace) && !p.curTokenIs(lexer.TokenEOF) {
+				if prop := p.parseProperty(); prop != nil {
+					row.Columns = append(row.Columns, *prop)
+				}
+				p.nextToken()
+			}
+			// curToken is now '}' of the row block.
+			data.Rows = append(data.Rows, row)
+		}
+		// Advance to the next key in the DATA block.
+		p.nextToken()
+	}
+	// curToken is now '}' (closing brace of DATA block).
+	return data
 }
 
 //

@@ -41,6 +41,9 @@ const (
 	// TokenSchema declares an inline database table schema inside a DATABASE/RESOURCE block.
 	// Syntax: SCHEMA { table: "name"  fields: ["col:type", ...] }
 	TokenSchema TokenType = "SCHEMA"
+	// TokenData declares an inline data-seeding block inside a DATABASE/RESOURCE block.
+	// Syntax: DATA { insert_into: "table"  row: { key: value ... } }
+	TokenData TokenType = "DATA"
 )
 
 // ── Symbols ───────────────────────────────────────────────────────────────────
@@ -97,6 +100,7 @@ var keywords = map[string]TokenType{
 	"SERVER":   TokenServer,
 	"STORAGE":  TokenStorage,
 	"SCHEMA":   TokenSchema,
+	"DATA":     TokenData,
 }
 
 // LookupIdentifier resolves a raw identifier string to its TokenType.

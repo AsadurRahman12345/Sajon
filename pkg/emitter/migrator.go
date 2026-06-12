@@ -224,3 +224,117 @@ func collectSchemas(rs *parser.ResourceStatement) []*parser.SchemaBlock {
 	}
 	return nil
 }
+
+// RunSeed opens a fresh database connection to connStr and seeds data from the
+// provided DataBlock.  It is called after RunMigrations so the target table is
+// guaranteed to exist before any INSERT is attempted.
+func RunSeed(connStr string, data *parser.DataBlock, resourceName string) error {
+	if connStr == "" || data == nil || len(data.Rows) == 0 {
+		return nil
+	}
+
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		return fmt.Errorf("seed open connection: %w", err)
+	}
+	defer db.Close()
+
+	return SeedData(db, data, resourceName)
+}
+
+
+
+// SeedData executes the INSERT statements described by a DataBlock on the live
+// database.  It is called after schema migration so the target table is
+// guaranteed to exist.
+//
+// Each row becomes:
+//
+//	INSERT INTO <table> (<col1>, <col2>, ...) VALUES (<v1>, <v2>, ...)
+//	ON CONFLICT DO NOTHING;
+//
+// ON CONFLICT DO NOTHING makes seeding fully idempotent — repeated 'sajon up'
+// runs never produce duplicate rows even if the user re-runs after a partial
+// success.
+//
+// String values are single-quote escaped; numeric values are inserted unquoted.
+func SeedData(db *sql.DB, data *parser.DataBlock, resourceName string) error {
+	if data == nil || data.InsertInto == "" || len(data.Rows) == 0 {
+		return nil
+	}
+
+	fmt.Printf("     [⚡] Seeding data into table '%s'...\n", data.InsertInto)
+
+	for i, row := range data.Rows {
+		if len(row.Columns) == 0 {
+			continue
+		}
+
+		// Build column list and value list in declaration order.
+		cols := make([]string, 0, len(row.Columns))
+		vals := make([]string, 0, len(row.Columns))
+		for _, col := range row.Columns {
+			cols = append(cols, col.Key)
+			vals = append(vals, formatSQLValue(col.Value))
+		}
+
+		insertSQL := fmt.Sprintf(
+			"INSERT INTO %s (%s) VALUES (%s) ON CONFLICT DO NOTHING;",
+			data.InsertInto,
+			strings.Join(cols, ", "),
+			strings.Join(vals, ", "),
+		)
+
+		fmt.Printf("     [⚡] Seeding row %d — %s\n", i+1, insertSQL)
+
+		if _, execErr := db.Exec(insertSQL); execErr != nil {
+			return fmt.Errorf(
+				"seed data INSERT into '%s' row %d on resource '%s': %w",
+				data.InsertInto, i+1, resourceName, execErr,
+			)
+		}
+
+		fmt.Printf("     [⚡] Seeded row %d into '%s' ✓\n", i+1, data.InsertInto)
+	}
+
+	fmt.Printf("     [⚡] Data Seeding Complete: %d row(s) inserted into '%s'.\n",
+		len(data.Rows), data.InsertInto)
+	return nil
+}
+
+// formatSQLValue converts a string value from the AST into a safe SQL literal.
+// Numeric values (integer or decimal) are emitted unquoted; everything else is
+// wrapped in single quotes with internal single quotes doubled for safety.
+func formatSQLValue(v string) string {
+	if isNumeric(v) {
+		return v
+	}
+	// Escape single quotes by doubling them (standard SQL escaping).
+	escaped := strings.ReplaceAll(v, "'", "''")
+	return "'" + escaped + "'"
+}
+
+// isNumeric reports whether s is a valid integer or decimal literal.
+func isNumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	dot := false
+	for i, c := range s {
+		if c == '.' {
+			if dot {
+				return false // two dots
+			}
+			dot = true
+			continue
+		}
+		if c == '-' && i == 0 {
+			continue // leading minus
+		}
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+

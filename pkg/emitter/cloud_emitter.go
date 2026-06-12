@@ -230,6 +230,14 @@ func (ce *CloudEmitter) ProvisionAll() error {
 					fmt.Printf("     [⚠️ ] Schema reconciliation warning: %v\n", migErr)
 				}
 			}
+			// Data seeding on cached resource.
+			if rs.Data != nil && ce.apiKey != "" && cached.ConnectionString != "" {
+				ce.addLog(fmt.Sprintf("[⚡] Data Seeding (cached): seeding rows for '%s'...", rs.Name))
+				if seedErr := RunSeed(cached.ConnectionString, rs.Data, rs.Name); seedErr != nil {
+					ce.addLog(fmt.Sprintf("[⚠️ ] Data seeding warning for '%s': %v", rs.Name, seedErr))
+					fmt.Printf("     [⚠️ ] Data seeding warning: %v\n", seedErr)
+				}
+			}
 			continue
 		}
 
@@ -275,6 +283,15 @@ func (ce *CloudEmitter) ProvisionAll() error {
 				// Non-fatal: log but continue — table can be created manually.
 				ce.addLog(fmt.Sprintf("[⚠️ ] Auto-migration warning for '%s': %v", rs.Name, migErr))
 				fmt.Printf("     [⚠️ ] Auto-migration warning: %v\n", migErr)
+			}
+		}
+
+		// ── Data Seeding: execute DATA block on the live database ───────────
+		if rs.Data != nil && ce.apiKey != "" {
+			ce.addLog(fmt.Sprintf("[⚡] Data Seeding: seeding rows into '%s' for resource '%s'...", rs.Data.InsertInto, rs.Name))
+			if seedErr := RunSeed(result.ConnectionString, rs.Data, rs.Name); seedErr != nil {
+				ce.addLog(fmt.Sprintf("[⚠️ ] Data seeding warning for '%s': %v", rs.Name, seedErr))
+				fmt.Printf("     [⚠️ ] Data seeding warning: %v\n", seedErr)
 			}
 		}
 
