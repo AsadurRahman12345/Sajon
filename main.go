@@ -1,4 +1,4 @@
-// main.go — Sajon Cloud Compiler entry point  ·  v1.1.0
+// main.go — Sajon Cloud Compiler entry point  ·  v1.2.2
 //
 // Usage:
 //
@@ -46,7 +46,7 @@ func colorize(color, text string) string { return color + text + ansiReset }
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const (
-	version       = "1.1.0"
+	version       = "1.2.2"
 	defaultSource = "app.saj"
 	outputFile    = "docker-compose.yml"
 )
