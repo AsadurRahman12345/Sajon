@@ -44,6 +44,7 @@ type LockResource struct {
 	PoolerHost       string `json:"pooler_host,omitempty"`
 	Database         string `json:"database,omitempty"`
 	User             string `json:"user,omitempty"`
+	Region           string `json:"region,omitempty"`  // cloud region, e.g. "ap-south-1"
 	Status           string `json:"status"` // "active" | "failed"
 }
 

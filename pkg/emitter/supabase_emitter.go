@@ -134,13 +134,14 @@ func (se *SupabaseEmitter) ProvisionAll() error {
 				ResourceName:     rs.Name,
 				ProjectRef:       cached.ProjectID,
 				ProjectName:      "sajon-" + strings.ReplaceAll(rs.Name, "_", "-"),
-				Region:           cached.Host,
+				Region:           cached.Region,                                              // FIX: use persisted region, not host
 				Host:             cached.Host,
 				PoolerHost:       cached.PoolerHost,
 				Database:         cached.Database,
 				User:             cached.User,
 				Password:         "", // not stored in lock for security
 				ConnectionString: cached.ConnectionString,
+				DashboardURL:     fmt.Sprintf("https://app.supabase.com/project/%s", cached.ProjectID), // FIX: compute from project ID
 			}
 			se.Results = append(se.Results, result)
 			provisioned++
@@ -189,6 +190,7 @@ func (se *SupabaseEmitter) ProvisionAll() error {
 			PoolerHost:       result.PoolerHost,
 			Database:         result.Database,
 			User:             result.User,
+			Region:           result.Region, // persist region so cached path can display it correctly
 			Status:           "active",
 		}
 		if writeErr := lf.UpsertResource(rs.Name, lr); writeErr != nil {
