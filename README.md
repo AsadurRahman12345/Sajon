@@ -4,10 +4,11 @@
 
 ### The Cloud Infrastructure Compiler
 
-**Write one simple file. Get a live cloud database, auto-migrated schema, and CI/CD pipeline — in 30 seconds.**
+**Write one simple file. Get a live cloud database, auto-migrated schema, seeded data, and CI/CD pipeline — in 30 seconds.**
 
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+[![Release](https://img.shields.io/badge/Release-v1.1.6-blue?style=flat-square)](https://github.com/AsadurRahman12345/Sajon/releases)
 [![Platforms](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=flat-square)]()
 
 </div>
@@ -26,9 +27,16 @@ No DevOps knowledge required. No manual dashboards. No copy-pasting connection s
 RESOURCE user_db {
     provider: "supabase"
     region:   "ap-south-1"
+
     SCHEMA {
         table:  "users"
         fields: ["id:int", "name:string", "email:string", "created_at:timestamp"]
+    }
+
+    DATA {
+        insert_into: "users"
+        row: { id: 1  name: "Alice"  email: "alice@example.com" }
+        row: { id: 2  name: "Bob"    email: "bob@example.com"   }
     }
 }
 ```
@@ -40,11 +48,12 @@ sajon up
 ```
 ✔ Supabase project created
 ✔ Table 'users' auto-migrated in live database
+✔ 2 row(s) seeded into 'users'
 ✔ sajon.env written — DATABASE_URL ready for your app
 ✔ docker-compose.yml generated for local development
 ```
 
-**That's it. Your cloud is live.**
+**That's it. Your cloud is live and your data is seeded.**
 
 ---
 
@@ -55,8 +64,12 @@ sajon up
 | 🗣️ **Custom Language** | Write `.saj` files — a clean, readable DSL purpose-built for cloud infrastructure |
 | ☁️ **Multi-Cloud** | Provision Neon Postgres, Supabase, AWS RDS/EC2/S3 from one file |
 | 🗄️ **Auto Schema Migration** | Define tables in plain English — Sajon writes and executes the SQL |
+| 🔄 **Schema Reconciliation** | Add new columns to your `.saj` file → `ALTER TABLE` runs automatically on the live DB |
+| 🌱 **Declarative Data Seeding** | Seed initial rows with a `DATA { }` block — idempotent on every `sajon up` |
 | 🔒 **State Management** | `sajon.lock` tracks what's live — idempotent like Terraform |
 | 🛡️ **Orphan Guard** | Prevents accidental data loss when resources are renamed |
+| ✅ **Strict Validation** | Unknown properties in `.saj` files throw a clear parse error — no silent mistakes |
+| ⏳ **DNS-Aware Retry** | Waits up to 100 seconds for cloud database DNS propagation (20 attempts × 5s) |
 | 📄 **Auto `.env` Injection** | Connection strings auto-written to `sajon.env` after deploy |
 | 🔄 **CI/CD Generator** | `sajon ci github` creates a full GitHub Actions pipeline instantly |
 | 🏠 **Local Dev** | `docker-compose.yml` auto-generated for local database development |
@@ -71,7 +84,7 @@ sajon up
 
 **Windows:**
 ```powershell
-# Download and place in your project folder
+# Download sajon.exe from Releases and place in your project folder
 # Then run from PowerShell:
 .\sajon.exe up
 ```
@@ -84,8 +97,8 @@ chmod +x sajon
 
 ### Build from Source
 ```bash
-git clone https://github.com/YOUR_USERNAME/sajon.git
-cd sajon
+git clone https://github.com/AsadurRahman12345/Sajon.git
+cd Sajon
 go build -o sajon .
 ```
 
@@ -102,10 +115,16 @@ go build -o sajon .
 
 RESOURCE my_database {
     provider: "supabase"
-    region:   "us-east-1"
+    region:   "ap-south-1"
+
     SCHEMA {
         table:  "users"
-        fields: ["id:int", "name:string", "email:string"]
+        fields: ["id:int", "name:string", "email:string", "created_at:timestamp"]
+    }
+
+    DATA {
+        insert_into: "users"
+        row: { id: 1  name: "Saju Bhai"  email: "saju@example.com" }
     }
 }
 
@@ -180,12 +199,24 @@ sajon help                       Show help
 
 ## .saj Language Reference
 
-### DATABASE / RESOURCE Block
+### RESOURCE / DATABASE Block
 
 ```ruby
 RESOURCE my_db {
     provider: "supabase"    # supabase | neon | aws | postgres
-    region:   "us-east-1"
+    region:   "ap-south-1"
+}
+```
+
+### SCHEMA Block — Auto Table Creation
+
+Define your database table inline. Sajon generates and executes `CREATE TABLE IF NOT EXISTS` automatically.
+
+```ruby
+RESOURCE my_db {
+    provider: "supabase"
+    region:   "ap-south-1"
+
     SCHEMA {
         table:  "users"
         fields: [
@@ -200,6 +231,92 @@ RESOURCE my_db {
     }
 }
 ```
+
+**Multiple tables** in one resource are fully supported:
+
+```ruby
+RESOURCE my_db {
+    provider: "supabase"
+    region:   "ap-south-1"
+
+    SCHEMA {
+        table:  "users"
+        fields: ["id:int", "name:string", "email:string"]
+    }
+
+    SCHEMA {
+        table:  "posts"
+        fields: ["id:int", "title:string", "content:text", "published:bool"]
+    }
+}
+```
+
+### Schema Reconciliation — Automatic `ALTER TABLE`
+
+When you add **new fields** to an existing `SCHEMA` block and run `sajon up` again, Sajon:
+1. Queries `information_schema.columns` on the live database
+2. Diffs the live columns against your `.saj` file
+3. Runs `ALTER TABLE ADD COLUMN IF NOT EXISTS` for any new fields
+
+```ruby
+# First run → creates table with 3 columns
+SCHEMA {
+    table:  "users"
+    fields: ["id:int", "name:string", "email:string"]
+}
+
+# Add fields, run 'sajon up' again → ALTER TABLE runs automatically
+SCHEMA {
+    table:  "users"
+    fields: ["id:int", "name:string", "email:string", "bio:text", "active:bool"]
+}
+```
+
+```
+[⚡] Schema Reconciliation: 'users' is cached — checking for new columns...
+[⚡] ALTER TABLE: Adding column 'bio' (TEXT) to table 'users' ✓
+[⚡] ALTER TABLE: Adding column 'active' (BOOLEAN) to table 'users' ✓
+```
+
+### DATA Block — Declarative Data Seeding ✨ New
+
+Seed initial rows into your live database **after** schema migration. Every row uses `ON CONFLICT DO NOTHING` making it fully **idempotent** — repeated `sajon up` runs never create duplicates.
+
+```ruby
+RESOURCE my_db {
+    provider: "supabase"
+    region:   "ap-south-1"
+
+    SCHEMA {
+        table:  "users"
+        fields: ["id:int", "name:string", "email:string"]
+    }
+
+    DATA {
+        insert_into: "users"
+        row: { id: 1  name: "Alice"       email: "alice@example.com"  }
+        row: { id: 2  name: "Bob"         email: "bob@example.com"    }
+        row: { id: 3  name: "Saju Bhai"   email: "saju@rentic.in"     }
+    }
+}
+```
+
+**Terminal output during `sajon up`:**
+```
+[⚡] Seeding data into table 'users'...
+[⚡] Seeding row 1 — INSERT INTO users (id, name, email) VALUES (1, 'Alice', 'alice@example.com') ON CONFLICT DO NOTHING;
+[⚡] Seeded row 1 into 'users' ✓
+[⚡] Seeding row 2 — INSERT INTO users (id, name, email) VALUES (2, 'Bob', 'bob@example.com') ON CONFLICT DO NOTHING;
+[⚡] Seeded row 2 into 'users' ✓
+[⚡] Data Seeding Complete: 2 row(s) inserted into 'users'.
+```
+
+**Rules:**
+- `insert_into` → target table name (must match a `SCHEMA` table in the same block)
+- `row: { }` → one row per `row` keyword; columns in declaration order
+- String values are automatically single-quoted and escaped
+- Numeric values (`int`, `float`) are inserted unquoted
+- Multiple `DATA` blocks are not allowed — one per `RESOURCE`
 
 ### SERVER Block (AWS EC2)
 
@@ -250,6 +367,25 @@ WORKER email_sender {
 
 ---
 
+## Strict Property Validation
+
+Sajon enforces a **strict whitelist** of allowed properties per block. Unknown keys throw a hard parse error — preventing silent misconfiguration.
+
+```ruby
+RESOURCE my_db {
+    provider: "supabase"
+    banana:   "hello"    # ← compile error!
+}
+```
+
+```
+✖  PARSE FAILED — syntax error(s):
+[1]  Unknown property 'banana' in RESOURCE block 'my_db'
+     Valid properties are: db_password, engine, provider, region, type, version
+```
+
+---
+
 ## Environment Variables
 
 | Variable | Required | Description |
@@ -292,6 +428,7 @@ Then add your cloud tokens as **GitHub Repository Secrets** and push. Done.
     │
     ▼
 ②  Parser         →  Recursive-descent parser builds typed AST
+                      Strict whitelist validation — unknown keys = hard error
     │
     ▼
 ③  AST Dump       →  Human-readable tree printed to terminal
@@ -302,7 +439,10 @@ Then add your cloud tokens as **GitHub Repository Secrets** and push. Done.
     ▼
 ⑤a Neon Emitter   →  Provisions Neon Serverless Postgres (if NEON_API_KEY set)
 ⑤b AWS Emitter    →  Provisions RDS / EC2 / S3 (if AWS keys set)
-⑤c Supabase Emit  →  Provisions Supabase project + runs migrations
+⑤c Supabase Emit  →  Provisions Supabase project
+                      └─ Waits for DNS propagation (20 retries × 5s)
+                      └─ Schema Reconciliation (CREATE / ALTER TABLE)
+                      └─ Data Seeding (INSERT ON CONFLICT DO NOTHING)
 ⑤d .env Injector  →  Writes sajon.env with all connection strings
     │
     ▼
@@ -322,13 +462,21 @@ Sajon tracks what it creates in `sajon.lock`:
       "provider": "supabase",
       "project_id": "abcdefghijklmnop",
       "connection_string": "postgresql://...",
+      "host": "db.abcdefghijklmnop.supabase.co",
+      "pooler_host": "aws-0-ap-south-1.pooler.supabase.com",
+      "database": "postgres",
+      "user": "postgres",
+      "region": "ap-south-1",
       "status": "active"
     }
   }
 }
 ```
 
-On subsequent `sajon up` runs, existing resources are **reused** — no duplicate creation.
+On subsequent `sajon up` runs:
+- **Existing resources** are reused — no duplicate creation
+- **Schema** is reconciled — new columns are added via `ALTER TABLE`
+- **Data** is re-seeded — `ON CONFLICT DO NOTHING` prevents duplicates
 
 > ⚠️ **Add `sajon.lock` to `.gitignore`** — it contains connection strings.
 > For team use, set `SAJON_REMOTE_BUCKET` to sync state via S3.
@@ -338,6 +486,7 @@ On subsequent `sajon up` runs, existing resources are **reused** — no duplicat
 ## Security
 
 - **Secret Redaction** — Passwords/tokens never printed to terminal
+- **URL-encoded passwords** — Special characters in DB passwords are safely encoded
 - **`sajon.env` permissions** — Written with mode `0600` (owner-only read)
 - **Atomic writes** — `sajon.env` and `sajon.lock` written via temp-file + rename
 - **Orphan Guard** — Blocks deployment if renamed resources would cause data loss
@@ -353,17 +502,17 @@ sajon/
 ├── pkg/
 │   ├── lexer/
 │   │   ├── lexer.go           # Tokeniser
-│   │   └── tokens.go          # Token type definitions
+│   │   └── tokens.go          # Token type definitions (incl. SCHEMA, DATA)
 │   ├── parser/
-│   │   ├── parser.go          # Recursive-descent parser
-│   │   └── ast.go             # AST node types
+│   │   ├── parser.go          # Recursive-descent parser + strict validation
+│   │   └── ast.go             # AST node types (ResourceStatement, SchemaBlock, DataBlock)
 │   └── emitter/
 │       ├── emitter.go         # docker-compose.yml generator
 │       ├── cloud_emitter.go   # Neon API provisioner
 │       ├── supabase_emitter.go # Supabase API provisioner
 │       ├── aws_emitter.go     # AWS provisioner
 │       ├── schema_compiler.go # .saj types → SQL translator
-│       ├── migrator.go        # Live database migration executor
+│       ├── migrator.go        # Live migration + reconciliation + data seeding
 │       ├── env_writer.go      # sajon.env auto-injection
 │       ├── ci_generator.go    # GitHub Actions workflow generator
 │       ├── planner.go         # sajon plan dry-run engine
@@ -375,10 +524,44 @@ sajon/
 
 ---
 
+## Changelog
+
+### v1.1.6
+- **Fix:** `Region` field now correctly shows cloud region (e.g. `ap-south-1`) in terminal summary for cached resources — previously showed host URL
+- **Fix:** `Dashboard` URL now populated for cached resources (`https://app.supabase.com/project/<ref>`)
+- **Fix:** `Region` persisted to `sajon.lock` so it survives across `sajon up` runs
+
+### v1.1.5 — Declarative Data Seeding
+- **New:** `DATA { insert_into: "table"  row: { ... } }` block for seeding initial rows
+- Parser: `DATA` keyword, `insert_into`, `row: { }` syntax fully supported
+- Emitter: Generates `INSERT INTO ... ON CONFLICT DO NOTHING` — fully idempotent
+- Works on both fresh provision and cached (lock-restored) resources
+
+### v1.1.4 — Schema Reconciliation
+- **New:** `ALTER TABLE ADD COLUMN IF NOT EXISTS` for new fields added to existing SCHEMA blocks
+- Diffs live `information_schema.columns` against AST on every `sajon up`
+- Multiple tables in one RESOURCE block fully supported
+
+### v1.1.3 — DNS-Aware Migration Retry
+- **Fix:** Auto-migration now waits up to 100s for DNS propagation after `ACTIVE_HEALTHY`
+- 20 retry attempts × 5 second delay with clear progress indicator
+- `[⚡] Auto-Migration: Waiting for Database DNS to propagate (Attempt X/20)...`
+
+### v1.1.2 — Strict Property Validation
+- **New:** Unknown properties in `RESOURCE` blocks now throw a hard parse error
+- Clear error message lists all valid property names
+
+### v1.1.1 — Connection String Fix
+- **Fix:** Passwords with special characters no longer break the `postgresql://` URL parser
+- Passwords are now `url.QueryEscape`-encoded before being embedded in the DSN
+
+---
+
 ## Roadmap
 
 - [ ] `sajon login` — OAuth browser-based credential setup
 - [ ] `sajon dev` — Local SQLite dev mode (no Docker needed)
+- [ ] `DROP COLUMN` / column type change support in Schema Reconciliation
 - [ ] Railway / Render / Fly.io `SERVICE` block for app deployment
 - [ ] GCP Cloud SQL and Firestore support
 - [ ] Web UI dashboard for visual infrastructure management
