@@ -222,6 +222,9 @@ func (p *Parser) parseResourceStatement() *ResourceStatement {
 		return nil
 	}
 
+	// Strict property validation: reject any unknown keys before returning.
+	p.validateResourceProperties(stmt)
+
 	return stmt
 }
 
@@ -458,4 +461,161 @@ func (p *Parser) parseEnvStatement() *EnvStatement {
 	}
 
 	return stmt
+}
+
+// ── Strict resource property validation ───────────────────────────────────────
+
+// allowedResourceProps defines the complete set of recognised property keys for
+// each block Kind, optionally specialised by provider value.
+//
+// Layout of the outer map:
+//
+//	"KIND" → { "providerOrWildcard" → set-of-allowed-keys }
+//
+// The lookup order is:
+//  1. exact match on (kind, provider)  — e.g. ("RESOURCE", "supabase")
+//  2. wildcard match on (kind, "*")    — applies to every provider for that kind
+//
+// A key present in the wildcard set is always allowed regardless of provider.
+var allowedResourceProps = map[string]map[string]map[string]bool{
+	// ── RESOURCE / DATABASE blocks ─────────────────────────────────────────
+	"RESOURCE": {
+		// Common keys available for any provider.
+		"*": {
+			"provider": true,
+			"engine":   true,
+			"type":     true,
+			"region":   true,
+			"version":  true,
+		},
+		// Supabase-specific extras.
+		"supabase": {
+			"db_password": true,
+		},
+		// Neon-specific extras.
+		"neon": {},
+		// Self-hosted postgres extras.
+		"postgres": {},
+		// AWS RDS extras.
+		"aws": {
+			"size": true,
+		},
+		// BigQuery extras.
+		"bigquery": {
+			"dataset": true,
+		},
+	},
+	// DATABASE blocks share the same rules as RESOURCE.
+	"DATABASE": {
+		"*": {
+			"provider": true,
+			"engine":   true,
+			"type":     true,
+			"region":   true,
+			"version":  true,
+		},
+		"supabase": {
+			"db_password": true,
+		},
+		"neon": {},
+		"postgres": {},
+		"aws": {
+			"size": true,
+		},
+		"bigquery": {
+			"dataset": true,
+		},
+	},
+	// ── WORKER blocks ──────────────────────────────────────────────────────
+	"WORKER": {
+		"*": {
+			"provider":    true,
+			"queue":       true,
+			"concurrency": true,
+			"region":      true,
+		},
+	},
+	// ── SERVER blocks (EC2 / VM) ───────────────────────────────────────────
+	"SERVER": {
+		"*": {
+			"provider":      true,
+			"region":        true,
+			"instance_type": true,
+			"ami":           true,
+		},
+	},
+	// ── STORAGE blocks (S3 / GCS) ─────────────────────────────────────────
+	"STORAGE": {
+		"*": {
+			"provider":    true,
+			"region":      true,
+			"bucket_name": true,
+			"bucket":      true,
+		},
+	},
+}
+
+// validateResourceProperties checks every parsed property key in stmt against
+// the compile-time allowlist.  Unknown keys produce a hard parser error so
+// the compiler stops with a clear diagnostic instead of silently ignoring
+// unrecognised fields.
+//
+// Called immediately before parseResourceStatement returns, after the full
+// body has been parsed and stmt.Properties is populated.
+func (p *Parser) validateResourceProperties(stmt *ResourceStatement) {
+	// Look up the per-kind rule table.
+	kindsMap, ok := allowedResourceProps[stmt.Kind]
+	if !ok {
+		// Unknown Kind — no validation rules; pass through (forward-compat).
+		return
+	}
+
+	// Determine the provider value (may be empty).
+	provider := ""
+	for _, prop := range stmt.Properties {
+		if prop.Key == "provider" {
+			provider = prop.Value
+			break
+		}
+	}
+
+	// Build the effective allowed set: wildcard keys + provider-specific keys.
+	allowed := make(map[string]bool)
+	for k := range kindsMap["*"] {
+		allowed[k] = true
+	}
+	if provider != "" {
+		for k := range kindsMap[provider] {
+			allowed[k] = true
+		}
+	}
+
+	// Build a human-readable sorted list of valid keys for error messages.
+	validList := make([]string, 0, len(allowed))
+	for k := range allowed {
+		validList = append(validList, k)
+	}
+	// Simple insertion sort (short slice — no need for sort package).
+	for i := 1; i < len(validList); i++ {
+		for j := i; j > 0 && validList[j] < validList[j-1]; j-- {
+			validList[j], validList[j-1] = validList[j-1], validList[j]
+		}
+	}
+	validStr := ""
+	for i, k := range validList {
+		if i > 0 {
+			validStr += ", "
+		}
+		validStr += k
+	}
+
+	// Check every parsed property key.
+	for _, prop := range stmt.Properties {
+		if !allowed[prop.Key] {
+			p.addError(fmt.Sprintf(
+				"Unknown property '%s' in %s block '%s' — valid properties are: %s",
+				prop.Key, stmt.Kind, stmt.Name, validStr,
+			))
+		}
+	}
 }
