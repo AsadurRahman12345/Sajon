@@ -8,7 +8,7 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
-[![Release](https://img.shields.io/badge/Release-v1.1.6-blue?style=flat-square)](https://github.com/AsadurRahman12345/Sajon/releases)
+[![Release](https://img.shields.io/badge/Release-v1.1.8-blue?style=flat-square)](https://github.com/AsadurRahman12345/Sajon/releases)
 [![Platforms](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=flat-square)]()
 
 </div>
@@ -525,6 +525,18 @@ sajon/
 ---
 
 ## Changelog
+
+### v1.1.8 — AWS RDS Full Automation Engine
+- **New:** `sajon.lock` state restoration for AWS RDS — second `sajon up` restores from cache, skips AWS API entirely (idempotent)
+- **New:** Schema Reconciliation for AWS RDS — `ALTER TABLE ADD COLUMN IF NOT EXISTS` for new fields in `SCHEMA` block
+- **New:** Data Seeding for AWS RDS — `DATA { }` block inserts rows via `INSERT ON CONFLICT DO NOTHING`
+- **New:** Real synchronous polling — `DescribeDBInstances` every 30 seconds, up to 60 attempts (30 min max), live counter in terminal
+- **Fix:** `LockResource` now has `Password`, `Port`, `InstanceID` fields for full AWS RDS state persistence
+
+### v1.1.7 — Neon Region + Dashboard URL Fixes
+- **Fix:** `Region` field correctly shows region (e.g. `ap-south-1`) for cached Neon resources — previously field was missing
+- **Fix:** `Dashboard` URL now shown for Neon resources: `https://console.neon.tech/app/projects/<id>`
+- **Fix:** `Region` persisted to `sajon.lock` for Neon projects across `sajon up` runs
 
 ### v1.1.6
 - **Fix:** `Region` field now correctly shows cloud region (e.g. `ap-south-1`) in terminal summary for cached resources — previously showed host URL
