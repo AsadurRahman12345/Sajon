@@ -64,6 +64,12 @@ func main() {
 	// ── Init remote state FIRST — before any lock file access ─────────────────
 	initRemoteState()
 
+	// ── Git Ignore Guard — runs on every substantive command at boot ──────────
+	if args[0] != "help" && args[0] != "--help" && args[0] != "-h" &&
+		args[0] != "version" && args[0] != "--version" && args[0] != "-v" {
+		runGitIgnoreGuard()
+	}
+
 	switch args[0] {
 	case "help", "--help", "-h":
 		printUsage()
@@ -137,6 +143,120 @@ func initRemoteState() {
 	}
 }
 
+// ── runGitIgnoreGuard ─────────────────────────────────────────────────────────
+//
+// runGitIgnoreGuard is the zero-configuration security layer that fires at
+// boot (Phase 1) for every substantive Sajon command.
+//
+// It performs three steps:
+//  1. Auto-detect / create .gitignore in the current working directory.
+//  2. Ensure the three mandatory secret-exclusion entries are present;
+//     append any that are missing (append-only, never overwrites existing).
+//  3. Warn when live cloud credentials are loaded into shell memory while
+//     sajon.env exists on disk — reminding the user that the file is
+//     already git-protected.
+//
+// Required .gitignore entries:
+//   - sajon.keys
+//   - sajon.env
+//   - .env
+func runGitIgnoreGuard() {
+	const giPath = ".gitignore"
+
+	// ── Required entries ──────────────────────────────────────────────────
+	required := []string{"sajon.keys", "sajon.env", ".env"}
+
+	// ── Read existing .gitignore (or treat as empty) ──────────────────────
+	var existing string
+	raw, readErr := os.ReadFile(giPath)
+	if readErr == nil {
+		existing = string(raw)
+	}
+
+	// ── Check which entries are missing ───────────────────────────────────
+	var missing []string
+	for _, entry := range required {
+		// Match the entry as a standalone line (exact word boundary check)
+		// to avoid false positives like "my-sajon.env".
+		found := false
+		for _, line := range strings.Split(existing, "\n") {
+			if strings.TrimSpace(line) == entry {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, entry)
+		}
+	}
+
+	// ── If file doesn't exist, create it from scratch ─────────────────────
+	if readErr != nil && len(missing) > 0 {
+		header := "# ── Sajon Auto-Generated .gitignore ──────────────────────────────────\n"
+		header += "# Generated automatically by Sajon Git-Ignore Guard.\n"
+		header += "# These entries protect your cloud credentials from being committed.\n\n"
+		content := header
+		for _, e := range missing {
+			content += e + "\n"
+		}
+		if writeErr := os.WriteFile(giPath, []byte(content), 0644); writeErr != nil {
+			fmt.Printf("  %s  Git-Ignore Guard: could not create .gitignore: %s\n",
+				colorize(ansiBoldYellow, "[⚠️]"), writeErr.Error())
+			return
+		}
+		for _, e := range missing {
+			fmt.Printf("  %s  Git-Ignore Guard: .gitignore created — added entry '%s'\n",
+				colorize(ansiBoldGreen, "[🛡️]"), e)
+		}
+	} else if len(missing) > 0 {
+		// ── Append missing entries to existing file ───────────────────────
+		f, openErr := os.OpenFile(giPath, os.O_APPEND|os.O_WRONLY, 0644)
+		if openErr != nil {
+			fmt.Printf("  %s  Git-Ignore Guard: could not update .gitignore: %s\n",
+				colorize(ansiBoldYellow, "[⚠️]"), openErr.Error())
+			return
+		}
+		defer f.Close()
+
+		// Ensure we start on a fresh line
+		if len(existing) > 0 && !strings.HasSuffix(existing, "\n") {
+			f.WriteString("\n") //nolint:errcheck
+		}
+		f.WriteString("\n# ── Sajon Git-Ignore Guard (auto-appended) ─────────────────────────\n") //nolint:errcheck
+		for _, e := range missing {
+			f.WriteString(e + "\n") //nolint:errcheck
+			fmt.Printf("  %s  Git-Ignore Guard: appended missing entry '%s' to .gitignore\n",
+				colorize(ansiBoldGreen, "[🛡️]"), e)
+		}
+	}
+
+	// ── Active Sync Warning ───────────────────────────────────────────────
+	// If live cloud credentials are in shell memory AND sajon.env exists
+	// on disk, remind the user that sajon.env is git-protected.
+	supaToken := os.Getenv("SUPABASE_ACCESS_TOKEN")
+	neonKey   := os.Getenv("NEON_API_KEY")
+	awsKey    := os.Getenv("AWS_ACCESS_KEY_ID")
+
+	_, envStat := os.Stat("sajon.env")
+	envExists := envStat == nil
+
+	if envExists && (supaToken != "" || neonKey != "" || awsKey != "") {
+		var liveVars []string
+		if supaToken != "" { liveVars = append(liveVars, "SUPABASE_ACCESS_TOKEN") }
+		if neonKey != ""   { liveVars = append(liveVars, "NEON_API_KEY") }
+		if awsKey != ""    { liveVars = append(liveVars, "AWS_ACCESS_KEY_ID") }
+		fmt.Printf("  %s  %s %s %s\n",
+			colorize(ansiBoldGreen, "[🛡️]"),
+			colorize(ansiGreen, "Credentials in memory ("+strings.Join(liveVars, ", ")+") detected —"),
+			colorize(ansiBoldGreen, "sajon.env"),
+			colorize(ansiGreen, "is git-locked and protected from accidental commit."))
+	}
+
+	// ── Always print the guard-active banner ─────────────────────────────
+	fmt.Printf("  %s  %s\n\n",
+		colorize(ansiBoldGreen, "[🛡️]"),
+		colorize(ansiBoldGreen, "Git-Ignore Guard Active: sajon.env, sajon.keys, and .env are protected."))
+}
 
 // printUsage prints the CLI help text.
 func printUsage() {

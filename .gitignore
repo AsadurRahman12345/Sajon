@@ -52,3 +52,6 @@ full_test.saj
 renamed.saj
 sajon_db.saj
 supabase_test.saj
+
+# ── Sajon Git-Ignore Guard (auto-appended) ─────────────────────────
+sajon.keys
