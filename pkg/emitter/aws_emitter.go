@@ -211,11 +211,13 @@ func (ae *AWSEmitter) deployRDSInstance(rs *parser.ResourceStatement) (*AWSResul
 			}
 
 			// ── Data Seeding on cached resource ───────────────────────────
-			if rs.Data != nil && ae.isLive() && cached.ConnectionString != "" {
-				ae.addLog(fmt.Sprintf("[⚡] Data Seeding: seeding rows into '%s' for cached AWS RDS '%s'...", rs.Data.InsertInto, rs.Name))
-				if seedErr := RunSeed(cached.ConnectionString, rs.Data, rs.Name); seedErr != nil {
-					ae.addLog(fmt.Sprintf("[⚠️ ] Data seeding warning for '%s': %v", rs.Name, seedErr))
-					fmt.Printf("     [⚠️ ] Data seeding warning: %v\n", seedErr)
+			if ae.isLive() && cached.ConnectionString != "" {
+				for _, data := range rs.Datas {
+					ae.addLog(fmt.Sprintf("[⚡] Data Seeding: seeding rows into '%s' for cached AWS RDS '%s'...", data.InsertInto, rs.Name))
+					if seedErr := RunSeed(cached.ConnectionString, data, rs.Name); seedErr != nil {
+						ae.addLog(fmt.Sprintf("[⚠️ ] Data seeding warning for '%s': %v", rs.Name, seedErr))
+						fmt.Printf("     [⚠️ ] Data seeding warning: %v\n", seedErr)
+					}
 				}
 			}
 
@@ -276,12 +278,15 @@ func (ae *AWSEmitter) deployRDSInstance(rs *parser.ResourceStatement) (*AWSResul
 		ae.step(rs, "🏗 ", "Step 6/7", "Schema Reconciliation — simulation mode (skipped live DB call).")
 	}
 
-	// ── Data Seeding (after schema) ───────────────────────────────────────
-	if rs.Data != nil && ae.isLive() {
-		ae.step(rs, "🌱", "Step 7/7", fmt.Sprintf("Data Seeding — inserting rows into '%s'...", rs.Data.InsertInto))
-		if seedErr := RunSeed(connStr, rs.Data, rs.Name); seedErr != nil {
-			ae.addLog(fmt.Sprintf("[⚠️ ] Data seeding warning for '%s': %v", rs.Name, seedErr))
-			fmt.Printf("     [⚠️ ] Data seeding warning: %v\n", seedErr)
+	// ── Data Seeding (after schema): loop over all DATA blocks ───────────────
+	if ae.isLive() && len(rs.Datas) > 0 {
+		for i, data := range rs.Datas {
+			stepLabel := fmt.Sprintf("Step 7/7 [%d/%d]", i+1, len(rs.Datas))
+			ae.step(rs, "🌱", stepLabel, fmt.Sprintf("Data Seeding — inserting rows into '%s'...", data.InsertInto))
+			if seedErr := RunSeed(connStr, data, rs.Name); seedErr != nil {
+				ae.addLog(fmt.Sprintf("[⚠️ ] Data seeding warning for '%s': %v", rs.Name, seedErr))
+				fmt.Printf("     [⚠️ ] Data seeding warning: %v\n", seedErr)
+			}
 		}
 	} else {
 		ae.step(rs, "✅", "Step 7/7", "Instance available — DSN assembled.")

@@ -84,11 +84,11 @@ func (p *Program) String() string {
 //	    version:  15
 //	}
 type ResourceStatement struct {
-	Kind       string      // "RESOURCE" | "DATABASE" | "WORKER"
-	Name       string      // user-defined block identifier
-	Properties []Property  // ordered list of key-value pairs
-	Schema     *SchemaBlock // optional inline database schema (SCHEMA { ... })
-	Data       *DataBlock  // optional inline seed data (DATA { ... })
+	Kind       string        // "RESOURCE" | "DATABASE" | "WORKER"
+	Name       string        // user-defined block identifier
+	Properties []Property    // ordered list of key-value pairs
+	Schemas    []*SchemaBlock // all inline SCHEMA blocks (multi-table support)
+	Datas      []*DataBlock  // all inline DATA blocks (multi-table support)
 }
 
 func (rs *ResourceStatement) statementNode() {}
@@ -103,13 +103,13 @@ func (rs *ResourceStatement) String() string {
 	for _, p := range rs.Properties {
 		out.WriteString(p.String() + "\n")
 	}
-	if rs.Schema != nil {
+	for _, schema := range rs.Schemas {
 		out.WriteString(fmt.Sprintf("    SCHEMA → table: %s  fields: %s\n",
-			rs.Schema.Table, strings.Join(rs.Schema.Fields, ", ")))
+			schema.Table, strings.Join(schema.Fields, ", ")))
 	}
-	if rs.Data != nil {
+	for _, data := range rs.Datas {
 		out.WriteString(fmt.Sprintf("    DATA → insert_into: %s  rows: %d\n",
-			rs.Data.InsertInto, len(rs.Data.Rows)))
+			data.InsertInto, len(data.Rows)))
 	}
 	return out.String()
 }

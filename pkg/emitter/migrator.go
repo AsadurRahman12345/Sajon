@@ -214,16 +214,13 @@ func ReconcileSchema(db *sql.DB, schema *parser.SchemaBlock, resourceName string
 	return nil
 }
 
-// collectSchemas is a convenience helper that extracts all non-nil SchemaBlocks
-// from a single ResourceStatement.  The result is a slice (currently length 0
-// or 1) but the slice form keeps the RunMigrations signature future-proof for
-// multi-table schemas.
+// collectSchemas returns all SchemaBlocks declared inside a ResourceStatement.
+// With multi-table support, a single RESOURCE can have N SCHEMA blocks and
+// this function returns all of them so RunMigrations processes every table.
 func collectSchemas(rs *parser.ResourceStatement) []*parser.SchemaBlock {
-	if rs.Schema != nil {
-		return []*parser.SchemaBlock{rs.Schema}
-	}
-	return nil
+	return rs.Schemas
 }
+
 
 // RunSeed opens a fresh database connection to connStr and seeds data from the
 // provided DataBlock.  It is called after RunMigrations so the target table is

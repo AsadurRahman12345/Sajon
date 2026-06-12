@@ -161,12 +161,14 @@ func (se *SupabaseEmitter) ProvisionAll() error {
 					fmt.Printf("     [⚠️ ] Schema reconciliation warning: %v\n", migErr)
 				}
 			}
-			// Data seeding on cached resource — always re-run (ON CONFLICT DO NOTHING keeps it idempotent).
-			if rs.Data != nil && se.accessToken != "" && cached.ConnectionString != "" {
-				se.addLog(fmt.Sprintf("[⚡] Data Seeding (cached): seeding rows for '%s'...", rs.Name))
-				if seedErr := RunSeed(cached.ConnectionString, rs.Data, rs.Name); seedErr != nil {
-					se.addLog(fmt.Sprintf("[⚠️ ] Data seeding warning for '%s': %v", rs.Name, seedErr))
-					fmt.Printf("     [⚠️ ] Data seeding warning: %v\n", seedErr)
+			// Data seeding on cached resource — loop over all DATA blocks.
+			if se.accessToken != "" && cached.ConnectionString != "" {
+				for _, data := range rs.Datas {
+					se.addLog(fmt.Sprintf("[⚡] Data Seeding (cached): seeding rows into '%s' for '%s'...", data.InsertInto, rs.Name))
+					if seedErr := RunSeed(cached.ConnectionString, data, rs.Name); seedErr != nil {
+						se.addLog(fmt.Sprintf("[⚠️ ] Data seeding warning for '%s': %v", rs.Name, seedErr))
+						fmt.Printf("     [⚠️ ] Data seeding warning: %v\n", seedErr)
+					}
 				}
 			}
 			continue
@@ -212,13 +214,15 @@ func (se *SupabaseEmitter) ProvisionAll() error {
 			}
 		}
 
-		// ── Data Seeding: execute DATA block on the live database ───────────
-		// Called after migration so the target table is guaranteed to exist.
-		if rs.Data != nil && se.accessToken != "" {
-			se.addLog(fmt.Sprintf("[⚡] Data Seeding: seeding rows into '%s' for resource '%s'...", rs.Data.InsertInto, rs.Name))
-			if seedErr := RunSeed(result.ConnectionString, rs.Data, rs.Name); seedErr != nil {
-				se.addLog(fmt.Sprintf("[⚠️ ] Data seeding warning for '%s': %v", rs.Name, seedErr))
-				fmt.Printf("     [⚠️ ] Data seeding warning: %v\n", seedErr)
+		// ── Data Seeding: loop over all DATA blocks on the live database ──────
+		// Called after migration so the target tables are guaranteed to exist.
+		if se.accessToken != "" {
+			for _, data := range rs.Datas {
+				se.addLog(fmt.Sprintf("[⚡] Data Seeding: seeding rows into '%s' for resource '%s'...", data.InsertInto, rs.Name))
+				if seedErr := RunSeed(result.ConnectionString, data, rs.Name); seedErr != nil {
+					se.addLog(fmt.Sprintf("[⚠️ ] Data seeding warning for '%s': %v", rs.Name, seedErr))
+					fmt.Printf("     [⚠️ ] Data seeding warning: %v\n", seedErr)
+				}
 			}
 		}
 

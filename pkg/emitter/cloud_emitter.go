@@ -232,12 +232,14 @@ func (ce *CloudEmitter) ProvisionAll() error {
 					fmt.Printf("     [⚠️ ] Schema reconciliation warning: %v\n", migErr)
 				}
 			}
-			// Data seeding on cached resource.
-			if rs.Data != nil && ce.apiKey != "" && cached.ConnectionString != "" {
-				ce.addLog(fmt.Sprintf("[⚡] Data Seeding (cached): seeding rows for '%s'...", rs.Name))
-				if seedErr := RunSeed(cached.ConnectionString, rs.Data, rs.Name); seedErr != nil {
-					ce.addLog(fmt.Sprintf("[⚠️ ] Data seeding warning for '%s': %v", rs.Name, seedErr))
-					fmt.Printf("     [⚠️ ] Data seeding warning: %v\n", seedErr)
+			// Data seeding on cached resource — loop over all DATA blocks.
+			if ce.apiKey != "" && cached.ConnectionString != "" {
+				for _, data := range rs.Datas {
+					ce.addLog(fmt.Sprintf("[⚡] Data Seeding (cached): seeding rows into '%s' for '%s'...", data.InsertInto, rs.Name))
+					if seedErr := RunSeed(cached.ConnectionString, data, rs.Name); seedErr != nil {
+						ce.addLog(fmt.Sprintf("[⚠️ ] Data seeding warning for '%s': %v", rs.Name, seedErr))
+						fmt.Printf("     [⚠️ ] Data seeding warning: %v\n", seedErr)
+					}
 				}
 			}
 			continue
@@ -289,12 +291,14 @@ func (ce *CloudEmitter) ProvisionAll() error {
 			}
 		}
 
-		// ── Data Seeding: execute DATA block on the live database ───────────
-		if rs.Data != nil && ce.apiKey != "" {
-			ce.addLog(fmt.Sprintf("[⚡] Data Seeding: seeding rows into '%s' for resource '%s'...", rs.Data.InsertInto, rs.Name))
-			if seedErr := RunSeed(result.ConnectionString, rs.Data, rs.Name); seedErr != nil {
-				ce.addLog(fmt.Sprintf("[⚠️ ] Data seeding warning for '%s': %v", rs.Name, seedErr))
-				fmt.Printf("     [⚠️ ] Data seeding warning: %v\n", seedErr)
+		// ── Data Seeding: loop over all DATA blocks on the live database ──────
+		if ce.apiKey != "" {
+			for _, data := range rs.Datas {
+				ce.addLog(fmt.Sprintf("[⚡] Data Seeding: seeding rows into '%s' for resource '%s'...", data.InsertInto, rs.Name))
+				if seedErr := RunSeed(result.ConnectionString, data, rs.Name); seedErr != nil {
+					ce.addLog(fmt.Sprintf("[⚠️ ] Data seeding warning for '%s': %v", rs.Name, seedErr))
+					fmt.Printf("     [⚠️ ] Data seeding warning: %v\n", seedErr)
+				}
 			}
 		}
 

@@ -1,0 +1,41 @@
+# multi_table_test.saj — smoke test for multi-SCHEMA + multi-DATA support
+# This verifies that two SCHEMA blocks and two DATA blocks inside a single
+# RESOURCE are all captured correctly (no overwrite bug).
+
+RESOURCE app_db {
+    provider: "supabase"
+    region:   "ap-south-1"
+
+    SCHEMA {
+        table:  "users"
+        fields: [
+            "id:int",
+            "name:string",
+            "email:string",
+            "created_at:timestamp"
+        ]
+    }
+
+    SCHEMA {
+        table:  "posts"
+        fields: [
+            "id:int",
+            "title:string",
+            "content:text",
+            "published:bool",
+            "created_at:timestamp"
+        ]
+    }
+
+    DATA {
+        insert_into: "users"
+        row: { id: 1  name: "Alice"  email: "alice@example.com" }
+        row: { id: 2  name: "Bob"    email: "bob@example.com"   }
+    }
+
+    DATA {
+        insert_into: "posts"
+        row: { id: 1  title: "Hello World"  content: "First post"  published: true }
+        row: { id: 2  title: "Sajon Rocks"  content: "Multi-table!"  published: true }
+    }
+}

@@ -1420,12 +1420,12 @@ func printResourceNode(rs *parser.ResourceStatement, conn, childPfx string) {
 		colorize(kc+ansiBold, fmt.Sprintf("[%s]", rs.Kind)),
 		colorize(ansiWhite, rs.Name))
 
-	// Decide which connector to use for the last child (properties OR schema).
-	lastChildIsSchema := rs.Schema != nil
+	// Decide which connector to use for the last child (properties OR schemas).
+	hasSchemas := len(rs.Schemas) > 0
 	propCount := len(rs.Properties)
 
 	for j, prop := range rs.Properties {
-		isLastProp := (j == propCount-1) && !lastChildIsSchema
+		isLastProp := (j == propCount-1) && !hasSchemas
 		pc := "├─"
 		if isLastProp {
 			pc = "└─"
@@ -1435,21 +1435,26 @@ func printResourceNode(rs *parser.ResourceStatement, conn, childPfx string) {
 			colorize(ansiGreen, `"`+prop.Value+`"`))
 	}
 
-	// Render the SCHEMA block as a sub-tree inside the resource node.
-	if rs.Schema != nil {
-		fmt.Printf("  %s   %s %s  %s\n", childPfx, "└─",
+	// Render each SCHEMA block as a sub-tree inside the resource node.
+	for si, schema := range rs.Schemas {
+		isLastSchema := si == len(rs.Schemas)-1
+		sc := "├─"
+		if isLastSchema {
+			sc = "└─"
+		}
+		fmt.Printf("  %s   %s %s  %s\n", childPfx, sc,
 			colorize(ansiBold+ansiMagenta, "SCHEMA"),
-			colorize(ansiDim, fmt.Sprintf("→ table: %s", rs.Schema.Table)))
-		for k, field := range rs.Schema.Fields {
+			colorize(ansiDim, fmt.Sprintf("→ table: %s", schema.Table)))
+		for k, field := range schema.Fields {
 			fc := "├─"
-			if k == len(rs.Schema.Fields)-1 {
+			if k == len(schema.Fields)-1 {
 				fc = "└─"
 			}
 			fmt.Printf("  %s       %s %s\n", childPfx, fc,
 				colorize(ansiGreen, `"`+field+`"`))
 		}
 		// Show the compiled SQL so the developer knows exactly what will execute.
-		compiledSQL := emitter.CompileSchema(rs.Schema)
+		compiledSQL := emitter.CompileSchema(schema)
 		if compiledSQL != "" {
 			fmt.Printf("  %s       %s %s\n", childPfx, "⚡",
 				colorize(ansiYellow, compiledSQL))

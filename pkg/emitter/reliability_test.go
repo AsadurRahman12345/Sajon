@@ -937,9 +937,11 @@ func TestMigrationGating_CollectSchemas(t *testing.T) {
 	rsWithSchema := &parser.ResourceStatement{
 		Name: "test",
 		Kind: "RESOURCE",
-		Schema: &parser.SchemaBlock{
-			Table:  "users",
-			Fields: []string{"id:int"},
+		Schemas: []*parser.SchemaBlock{
+			{
+				Table:  "users",
+				Fields: []string{"id:int"},
+			},
 		},
 	}
 	schemas2 := collectSchemas(rsWithSchema)

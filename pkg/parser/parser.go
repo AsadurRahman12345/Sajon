@@ -203,14 +203,14 @@ func (p *Parser) parseResourceStatement() *ResourceStatement {
 	p.nextToken()
 	for !p.curTokenIs(lexer.TokenRBrace) && !p.curTokenIs(lexer.TokenEOF) {
 		if p.curTokenIs(lexer.TokenSchema) {
-			// Inline SCHEMA block — parse it and attach to the statement.
+			// Inline SCHEMA block — append to the slice (multi-table support).
 			if schema := p.parseSchemaBlock(); schema != nil {
-				stmt.Schema = schema
+				stmt.Schemas = append(stmt.Schemas, schema)
 			}
 		} else if p.curTokenIs(lexer.TokenData) {
-			// Inline DATA block — parse seed rows and attach to the statement.
+			// Inline DATA block — append to the slice (multi-table support).
 			if data := p.parseDataBlock(); data != nil {
-				stmt.Data = data
+				stmt.Datas = append(stmt.Datas, data)
 			}
 		} else if prop := p.parseProperty(); prop != nil {
 			stmt.Properties = append(stmt.Properties, *prop)
