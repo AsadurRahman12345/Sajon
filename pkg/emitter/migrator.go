@@ -7,10 +7,11 @@
 // It is intentionally called ONLY in live mode (real credentials present) so
 // that simulation runs never attempt to dial a non-existent host.
 //
-// Retry policy: Postgres on Supabase / Neon may need a few seconds after
-// reporting ACTIVE_HEALTHY before the connection layer is fully ready.
-// RunMigrations retries the initial Ping up to 3 times with a 5-second
-// back-off before giving up, which covers 99 % of cold-start races.
+// Retry policy: Supabase / Neon report ACTIVE_HEALTHY before DNS for the
+// database host (db.<ref>.supabase.co) has fully propagated, which can take
+// 30–60 seconds.  RunMigrations retries the initial Ping up to 20 times with
+// a fixed 5-second back-off (up to ~100 s total), which reliably covers
+// real-world DNS propagation windows without giving up too early.
 
 package emitter
 
@@ -28,9 +29,13 @@ import (
 
 // migrateRetries controls how many times RunMigrations retries a failed Ping
 // before declaring the database unreachable.
-const migrateRetries = 3
+//
+// 20 attempts × 5 s = up to 100 s total wait.  This covers the 30–60 s DNS
+// propagation delay that Supabase exhibits after a project becomes
+// ACTIVE_HEALTHY, while still failing fast for genuinely broken connections.
+const migrateRetries = 20
 
-// migratePingDelay is the wait between successive Ping attempts.
+// migratePingDelay is the fixed wait between successive Ping attempts.
 const migratePingDelay = 5 * time.Second
 
 // RunMigrations connects to the Postgres database at connStr and executes a
@@ -42,9 +47,10 @@ const migratePingDelay = 5 * time.Second
 //	schemas      — Slice of SchemaBlocks gathered from the parsed program's AST.
 //	resourceName — Human-readable label for log messages (the resource name).
 //
-// Returns a non-nil error only when the database is unreachable or a SQL
-// statement fails.  Individual "table already exists" scenarios are swallowed
-// by the IF NOT EXISTS clause, making migrations fully idempotent.
+// Returns a non-nil error only when the database is unreachable after all
+// retry attempts, or when a SQL statement fails.  Individual "table already
+// exists" scenarios are swallowed by the IF NOT EXISTS clause, making
+// migrations fully idempotent.
 func RunMigrations(connStr string, schemas []*parser.SchemaBlock, resourceName string) error {
 	if connStr == "" || len(schemas) == 0 {
 		return nil
@@ -57,17 +63,23 @@ func RunMigrations(connStr string, schemas []*parser.SchemaBlock, resourceName s
 	}
 	defer db.Close()
 
-	// ── Ping with retry for cold-start databases ───────────────────────────
+	// ── Ping with retry — waits for DNS propagation after ACTIVE_HEALTHY ──
+	// Supabase marks a project ACTIVE_HEALTHY before its db.<ref>.supabase.co
+	// DNS record resolves globally.  We retry until the host is reachable or
+	// we exhaust all attempts, printing a clear status line each time so the
+	// user knows the compiler is making progress and not hanging.
+	fmt.Printf("     [⚡] Auto-Migration: Waiting for Database DNS to propagate...\n")
 	var pingErr error
 	for attempt := 1; attempt <= migrateRetries; attempt++ {
-		if pingErr = db.Ping(); pingErr == nil {
+		pingErr = db.Ping()
+		if pingErr == nil {
+			fmt.Printf("     [⚡] Auto-Migration: Database is reachable! (Attempt %d/%d) ✓\n",
+				attempt, migrateRetries)
 			break
 		}
-		if attempt < migrateRetries {
-			fmt.Printf("     [⚡] Auto-Migration: DB not ready yet (attempt %d/%d) — retrying in %s...\n",
-				attempt, migrateRetries, migratePingDelay)
-			time.Sleep(migratePingDelay)
-		}
+		fmt.Printf("     [⚡] Auto-Migration: Waiting for Database DNS to propagate (Attempt %d/%d)... retrying in %s\n",
+			attempt, migrateRetries, migratePingDelay)
+		time.Sleep(migratePingDelay)
 	}
 	if pingErr != nil {
 		return fmt.Errorf("auto-migration ping failed after %d attempts: %w", migrateRetries, pingErr)
