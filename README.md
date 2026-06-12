@@ -8,7 +8,7 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
-[![Release](https://img.shields.io/badge/Release-v1.1.9-blue?style=flat-square)](https://github.com/AsadurRahman12345/Sajon/releases)
+[![Release](https://img.shields.io/badge/Release-v1.2.0-blue?style=flat-square)](https://github.com/AsadurRahman12345/Sajon/releases)
 [![Platforms](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=flat-square)]()
 
 </div>
@@ -76,6 +76,7 @@ sajon up
 | ☁️ **Remote State** | S3-backed `sajon.lock` for multi-developer team sync |
 | 🔐 **Secret Redaction** | Passwords never appear in terminal output |
 | 🛡️ **Git-Ignore Guard** | Auto-creates/patches `.gitignore` at boot — `sajon.env`, `sajon.keys`, `.env` are always protected; warns when live credentials are in memory |
+| 🎨 **Windows Shell Integration** | First run auto-registers `.saj` files in Windows Explorer with a custom Sajon icon — no admin rights needed, silent sentinel prevents re-registration |
 
 ---
 
@@ -526,6 +527,15 @@ sajon/
 ---
 
 ## Changelog
+
+### v1.2.0 — Automatic Windows Shell Integration
+- **New:** Boot-time silent `.saj` file association via Windows Registry (HKCU — no admin privileges required)
+- **New:** Custom Sajon icon embedded directly inside `sajon.exe` using `go-winres` + `rsrc_windows_amd64.syso`
+- **New:** HKCU fallback path: `HKCU\Software\Classes\.saj` → `SajonLanguageFile` with `DefaultIcon` and `shell\open\command` auto-configured
+- **New:** Sentinel key prevents re-registration on every run — one-time setup only, completely silent after first activation
+- **New:** Shell icon cache refreshed via `ie4uinit.exe -show` after registration
+- **New:** Cross-platform stubs (`winshell_stub.go`) ensure Linux/macOS builds are unaffected
+- **Terminal output (first run only):** `[🎨] Sajon Environment Synced: Custom .saj file icons are now active on your OS!`
 
 ### v1.1.9 — Automatic Git-Ignore Guard
 - **New:** Zero-configuration security layer — fires at boot for every substantive command (`up`, `plan`, `down`, `ci`)

@@ -70,13 +70,13 @@ func main() {
 		runGitIgnoreGuard()
 	}
 
-	// ── Windows Shell Sync — silent .saj file association at boot ─────────────
-	// Only fires for substantive commands. On non-Windows this is a no-op.
-	// runWindowsShellSync() returns true ONLY on the very first successful
-	// registration, so the "Environment Synced" message appears just once.
+	// ── OS Shell Sync — silent .saj file association at boot ──────────────────
+	// Cross-platform: Windows → HKCU registry, Linux → XDG MIME/desktop,
+	// macOS/other → intentional no-op (requires App Bundle in future).
+	// runShellSync() returns true ONLY on first successful registration.
 	if args[0] != "help" && args[0] != "--help" && args[0] != "-h" &&
 		args[0] != "version" && args[0] != "--version" && args[0] != "-v" {
-		if runWindowsShellSync() {
+		if runShellSync() {
 			fmt.Printf("  %s  %s\n\n",
 				colorize(ansiBoldMagenta, "[🎨]"),
 				colorize(ansiBoldMagenta, "Sajon Environment Synced: Custom .saj file icons are now active on your OS!"))
