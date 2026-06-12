@@ -8,7 +8,7 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
-[![Release](https://img.shields.io/badge/Release-v1.1.8-blue?style=flat-square)](https://github.com/AsadurRahman12345/Sajon/releases)
+[![Release](https://img.shields.io/badge/Release-v1.1.9-blue?style=flat-square)](https://github.com/AsadurRahman12345/Sajon/releases)
 [![Platforms](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=flat-square)]()
 
 </div>
@@ -75,6 +75,7 @@ sajon up
 | 🏠 **Local Dev** | `docker-compose.yml` auto-generated for local database development |
 | ☁️ **Remote State** | S3-backed `sajon.lock` for multi-developer team sync |
 | 🔐 **Secret Redaction** | Passwords never appear in terminal output |
+| 🛡️ **Git-Ignore Guard** | Auto-creates/patches `.gitignore` at boot — `sajon.env`, `sajon.keys`, `.env` are always protected; warns when live credentials are in memory |
 
 ---
 
@@ -525,6 +526,13 @@ sajon/
 ---
 
 ## Changelog
+
+### v1.1.9 — Automatic Git-Ignore Guard
+- **New:** Zero-configuration security layer — fires at boot for every substantive command (`up`, `plan`, `down`, `ci`)
+- **New:** Auto-detects `.gitignore` in CWD — creates it from scratch with a protective header if missing
+- **New:** Ensures `sajon.keys`, `sajon.env`, and `.env` are present as standalone entries; append-only — never overwrites existing lines
+- **New:** Active Sync Warning: when `SUPABASE_ACCESS_TOKEN`, `NEON_API_KEY`, or `AWS_ACCESS_KEY_ID` are in shell memory and `sajon.env` exists on disk, prints a reminder that credentials are already git-locked
+- **Terminal output:** `[🛡️] Git-Ignore Guard Active: sajon.env, sajon.keys, and .env are protected.`
 
 ### v1.1.8 — AWS RDS Full Automation Engine
 - **New:** `sajon.lock` state restoration for AWS RDS — second `sajon up` restores from cache, skips AWS API entirely (idempotent)
