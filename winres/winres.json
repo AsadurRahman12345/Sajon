@@ -1,0 +1,58 @@
+{
+  "RT_GROUP_ICON": {
+    "APP": {
+      "0000": "APP_0000.ico"
+    }
+  },
+  "RT_MANIFEST": {
+    "#1": {
+      "0409": {
+        "identity": {
+          "name": "Sajon.CloudCompiler",
+          "version": "1.1.9.0"
+        },
+        "description": "Sajon Cloud Infrastructure Compiler",
+        "minimum-os": "win7",
+        "execution-level": "",
+        "ui-access": false,
+        "auto-elevate": false,
+        "dpi-awareness": "system",
+        "disable-theming": false,
+        "disable-window-filtering": false,
+        "high-resolution-scrolling-aware": false,
+        "ultra-high-resolution-scrolling-aware": false,
+        "long-path-aware": true,
+        "printer-driver-isolation": false,
+        "gdi-scaling": false,
+        "segment-heap": false,
+        "use-common-controls-v6": false
+      }
+    }
+  },
+  "RT_VERSION": {
+    "#1": {
+      "0409": {
+        "fixed": {
+          "file_version": "1.1.9.0",
+          "product_version": "1.1.9.0"
+        },
+        "info": {
+          "0409": {
+            "Comments": "Cloud-native infrastructure compiler",
+            "CompanyName": "Sajon",
+            "FileDescription": "Sajon Cloud Infrastructure Compiler",
+            "FileVersion": "1.1.9",
+            "InternalName": "sajon",
+            "LegalCopyright": "MIT License",
+            "LegalTrademarks": "",
+            "OriginalFilename": "sajon.exe",
+            "PrivateBuild": "",
+            "ProductName": "Sajon",
+            "ProductVersion": "1.1.9",
+            "SpecialBuild": ""
+          }
+        }
+      }
+    }
+  }
+}
