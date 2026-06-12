@@ -44,7 +44,10 @@ type LockResource struct {
 	PoolerHost       string `json:"pooler_host,omitempty"`
 	Database         string `json:"database,omitempty"`
 	User             string `json:"user,omitempty"`
-	Region           string `json:"region,omitempty"`  // cloud region, e.g. "ap-south-1"
+	Region           string `json:"region,omitempty"`   // cloud region, e.g. "ap-south-1"
+	Password         string `json:"password,omitempty"` // master password (AWS RDS only — needed to rebuild DSN from cache)
+	Port             int    `json:"port,omitempty"`      // DB port (AWS RDS only — default 5432)
+	InstanceID       string `json:"instance_id,omitempty"` // AWS RDS instance identifier
 	Status           string `json:"status"` // "active" | "failed"
 }
 

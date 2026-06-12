@@ -91,6 +91,7 @@ type AWSEmitter struct {
 	secretKey string
 	region    string // default region (overridden per-resource)
 	client    *http.Client
+	lockFile  *LockFile // in-memory state loaded from sajon.lock
 	Results   []AWSResult
 	Log       []string
 }
@@ -110,7 +111,21 @@ func NewAWS(p *parser.Program, accessKey, secretKey, region string) *AWSEmitter 
 
 // ProvisionAll walks the AST and dispatches every "aws" ResourceStatement
 // to the correct service provisioner based on its Kind.
+//
+// STATE MANAGEMENT: Before calling any AWS API, ProvisionAll reads sajon.lock.
+// Active (already-provisioned) RDS resources are loaded from cache and returned
+// without touching the AWS API — making repeated 'sajon up' runs fully idempotent.
+// EC2 and S3 are stateless (no lock integration) since they lack a DB endpoint
+// to restore and connect to.
 func (ae *AWSEmitter) ProvisionAll() error {
+	// ── Load lock file for idempotent RDS provisioning ─────────────────────
+	lf, err := ReadLockFile()
+	if err != nil {
+		ae.addLog(fmt.Sprintf("[⚠️ ] Could not read %s: %v — proceeding without cache", LockFilePath, err))
+		lf = &LockFile{Resources: make(map[string]LockResource)}
+	}
+	ae.lockFile = lf
+
 	provisioned := 0
 	for _, stmt := range ae.program.Statements {
 		rs, ok := stmt.(*parser.ResourceStatement)
@@ -160,44 +175,143 @@ func (ae *AWSEmitter) deployRDSInstance(rs *parser.ResourceStatement) (*AWSResul
 	if engine == ""        { engine = "postgres" }
 	if instanceClass == "" { instanceClass = "db.t3.micro" }
 
-	dbUser := "sajon_admin"
-	dbPass := ae.generatePassword()
 	dbName := strings.ReplaceAll(rs.Name, "-", "_")
 
-	ae.step(rs, "🔐", "Step 1/6", "Authenticating with AWS STS...")
+	// ── Lock pre-check: skip AWS API if already provisioned ───────────────
+	if ae.lockFile != nil {
+		if cached, found := ae.lockFile.GetActiveResource(rs.Name); found && cached.Provider == "aws" {
+			ae.addLog(fmt.Sprintf("[ℹ️ ] AWS RDS '%s' already live (sajon.lock) — restoring from cache.", rs.Name))
+			fmt.Printf("     [ℹ️ ] AWS RDS '%s' already active — skipping cloud provisioning.\n", rs.Name)
+
+			result := &AWSResult{
+				ServiceType:      "RDS",
+				ResourceName:     rs.Name,
+				Region:           cached.Region,
+				InstanceID:       cached.InstanceID,
+				Engine:           engine,
+				EngineVersion:    "15.4",
+				InstanceClass:    instanceClass,
+				Host:             cached.Host,
+				Port:             cached.Port,
+				Database:         cached.Database,
+				User:             cached.User,
+				Password:         cached.Password,
+				ConnectionString: cached.ConnectionString,
+				ARN:              fmt.Sprintf("arn:aws:rds:%s:000000000000:db:%s", cached.Region, cached.InstanceID),
+			}
+
+			// ── Schema Reconciliation on cached resource ──────────────────
+			if schemas := collectSchemas(rs); len(schemas) > 0 && ae.isLive() && cached.ConnectionString != "" {
+				ae.addLog(fmt.Sprintf("[⚡] Schema Reconciliation: checking for schema changes on cached AWS RDS '%s'...", rs.Name))
+				fmt.Printf("     [⚡] Schema Reconciliation: '%s' is cached — checking for new columns...\n", rs.Name)
+				if migErr := RunMigrations(cached.ConnectionString, schemas, rs.Name); migErr != nil {
+					ae.addLog(fmt.Sprintf("[⚠️ ] Schema reconciliation warning for '%s': %v", rs.Name, migErr))
+					fmt.Printf("     [⚠️ ] Schema reconciliation warning: %v\n", migErr)
+				}
+			}
+
+			// ── Data Seeding on cached resource ───────────────────────────
+			if rs.Data != nil && ae.isLive() && cached.ConnectionString != "" {
+				ae.addLog(fmt.Sprintf("[⚡] Data Seeding: seeding rows into '%s' for cached AWS RDS '%s'...", rs.Data.InsertInto, rs.Name))
+				if seedErr := RunSeed(cached.ConnectionString, rs.Data, rs.Name); seedErr != nil {
+					ae.addLog(fmt.Sprintf("[⚠️ ] Data seeding warning for '%s': %v", rs.Name, seedErr))
+					fmt.Printf("     [⚠️ ] Data seeding warning: %v\n", seedErr)
+				}
+			}
+
+			return result, nil
+		}
+	}
+
+	// ── Fresh provisioning pipeline ───────────────────────────────────────
+	dbUser := "sajon_admin"
+	dbPass := ae.generatePassword()
+
+	ae.step(rs, "🔐", "Step 1/7", "Authenticating with AWS STS...")
 	accountID, err := ae.stepAuthenticate(region)
 	if err != nil {
 		return nil, err
 	}
 
-	ae.step(rs, "🌐", "Step 2/6", "Resolving VPC and subnet group...")
+	ae.step(rs, "🌐", "Step 2/7", "Resolving VPC and subnet group...")
 	vpcID, subnetGroup := ae.stepResolveVPC(id, region)
 
-	ae.step(rs, "🛡 ", "Step 3/6", "Resolving security group (port 5432)...")
+	ae.step(rs, "🛡 ", "Step 3/7", "Resolving security group (port 5432)...")
 	sgID := ae.stepResolveSecurityGroup(id, vpcID, region)
 
-	ae.step(rs, "🗄 ", "Step 4/6", fmt.Sprintf("RDS CreateDBInstance → %s %s...", instanceClass, engine))
+	ae.step(rs, "🗄 ", "Step 4/7", fmt.Sprintf("RDS CreateDBInstance → %s %s...", instanceClass, engine))
 	host, err := ae.stepCreateRDSInstance(id, engine, instanceClass, subnetGroup, sgID, dbUser, dbPass, dbName, region)
 	if err != nil {
 		return nil, err
 	}
 
-	ae.step(rs, "⏳", "Step 5/6", "Waiting for RDS instance to become available...")
-	ae.stepWaitRDS(id)
+	ae.step(rs, "⏳", "Step 5/7", "Waiting for RDS instance to become AVAILABLE...")
+	finalHost, err := ae.stepWaitRDSAvailable(id, host, region)
+	if err != nil {
+		return nil, err
+	}
+	host = finalHost // may be updated with real endpoint from DescribeDBInstances
 
 	connStr := fmt.Sprintf("postgresql://%s:%s@%s:5432/%s?sslmode=require", dbUser, dbPass, host, dbName)
-	ae.step(rs, "✅", "Step 6/6", "Instance available — DSN assembled.")
 	ae.addLog(fmt.Sprintf("[%s] %-16s  →  RDS %-22s  Region: %s  Host: %s",
 		rs.Kind, rs.Name, id, region, host))
 
-	return &AWSResult{
+	result := &AWSResult{
 		ServiceType: "RDS", ResourceName: rs.Name, Region: region,
 		ARN:             fmt.Sprintf("arn:aws:rds:%s:%s:db:%s", region, accountID, id),
 		InstanceID:      id, Engine: engine, EngineVersion: "15.4",
 		InstanceClass:   instanceClass, VPCID: vpcID, SecurityGroupID: sgID,
 		SubnetGroupName: subnetGroup, Host: host, Port: 5432,
 		Database: dbName, User: dbUser, Password: dbPass, ConnectionString: connStr,
-	}, nil
+	}
+
+	// ── Schema Reconciliation (after AVAILABLE) ───────────────────────────
+	if schemas := collectSchemas(rs); len(schemas) > 0 && ae.isLive() {
+		ae.step(rs, "🏗 ", "Step 6/7", "Schema Reconciliation — applying SCHEMA block to live RDS...")
+		if migErr := RunMigrations(connStr, schemas, rs.Name); migErr != nil {
+			ae.addLog(fmt.Sprintf("[⚠️ ] Auto-migration warning for '%s': %v", rs.Name, migErr))
+			fmt.Printf("     [⚠️ ] Auto-migration warning: %v\n", migErr)
+		}
+	} else if collectSchemas(rs) != nil {
+		ae.step(rs, "🏗 ", "Step 6/7", "Schema Reconciliation — simulation mode (skipped live DB call).")
+	}
+
+	// ── Data Seeding (after schema) ───────────────────────────────────────
+	if rs.Data != nil && ae.isLive() {
+		ae.step(rs, "🌱", "Step 7/7", fmt.Sprintf("Data Seeding — inserting rows into '%s'...", rs.Data.InsertInto))
+		if seedErr := RunSeed(connStr, rs.Data, rs.Name); seedErr != nil {
+			ae.addLog(fmt.Sprintf("[⚠️ ] Data seeding warning for '%s': %v", rs.Name, seedErr))
+			fmt.Printf("     [⚠️ ] Data seeding warning: %v\n", seedErr)
+		}
+	} else {
+		ae.step(rs, "✅", "Step 7/7", "Instance available — DSN assembled.")
+	}
+
+	// ── Persist to sajon.lock ─────────────────────────────────────────────
+	if ae.lockFile != nil {
+		lr := LockResource{
+			Provider:         "aws",
+			Type:             "rds",
+			ProjectID:        id,
+			ConnectionString: connStr,
+			Host:             host,
+			Database:         dbName,
+			User:             dbUser,
+			Password:         dbPass,
+			Port:             5432,
+			InstanceID:       id,
+			Region:           region,
+			Status:           "active",
+		}
+		if writeErr := ae.lockFile.UpsertResource(rs.Name, lr); writeErr != nil {
+			ae.addLog(fmt.Sprintf("[⚠️ ] Could not update %s: %v", LockFilePath, writeErr))
+		} else {
+			ae.addLog(fmt.Sprintf("[🔒] State saved → %s (resource: %s)", LockFilePath, rs.Name))
+			fmt.Printf("     [🔒]  sajon.lock updated — '%s' state persisted.\n", rs.Name)
+		}
+	}
+
+	return result, nil
 }
 
 // ── EC2 pipeline ──────────────────────────────────────────────────────────────
@@ -742,12 +856,99 @@ func (ae *AWSEmitter) stepWaitEC2(ec2ID, region string) {
 	}
 }
 
-// stepWaitRDS simulates the RDS instance status polling.
-func (ae *AWSEmitter) stepWaitRDS(id string) {
-	for i, s := range []string{"creating", "modifying", "backing-up", "available"} {
-		time.Sleep(time.Duration(150+i*80) * time.Millisecond)
-		ae.addLog(fmt.Sprintf("  RDS DescribeDBInstances →  %s  status: %s", id, s))
+// stepWaitRDSAvailable polls until the RDS instance status is "available".
+//
+// Simulation mode: fast fake progression (milliseconds).
+// Live mode:       real DescribeDBInstances calls every 30 seconds, up to 60
+//                  attempts (30 minute maximum).  The terminal shows a live
+//                  counter: "[⏳] AWS RDS: Status: CREATING (Attempt X/60 - elapsed: Y mins)"
+//
+// Returns the final host endpoint (may differ from the one returned by
+// CreateDBInstance, which is often blank while the instance is still creating).
+func (ae *AWSEmitter) stepWaitRDSAvailable(id, initialHost, region string) (string, error) {
+	if !ae.isLive() {
+		// ── Simulation ────────────────────────────────────────────────────
+		statuses := []string{"creating", "modifying", "backing-up", "available"}
+		for i, s := range statuses {
+			time.Sleep(time.Duration(150+i*80) * time.Millisecond)
+			ae.addLog(fmt.Sprintf("  RDS DescribeDBInstances →  %s  status: %s", id, s))
+			fmt.Printf("          [⏳] AWS RDS: Status: %s (Attempt %d/%d)\n",
+				strings.ToUpper(s), i+1, len(statuses))
+		}
+		return initialHost, nil
 	}
+
+	// ── Live synchronous polling ───────────────────────────────────────────
+	const maxAttempts = 60
+	const pollInterval = 30 * time.Second
+	endpoint := fmt.Sprintf("https://rds.%s.amazonaws.com/", region)
+	startTime := time.Now()
+	host := initialHost
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		params := url.Values{}
+		params.Set("Action", "DescribeDBInstances")
+		params.Set("Version", "2014-10-31")
+		params.Set("DBInstanceIdentifier", id)
+
+		req, err := ae.buildAWSRequest("POST", endpoint, "rds", region, params.Encode())
+		if err != nil {
+			ae.addLog(fmt.Sprintf("  RDS DescribeDBInstances →  build error: %v", err))
+		} else {
+			// Use a longer timeout for status polling
+			pollClient := &http.Client{Timeout: 15 * time.Second}
+			resp, rerr := pollClient.Do(req)
+			if rerr != nil {
+				ae.addLog(fmt.Sprintf("  RDS DescribeDBInstances →  request error: %v", rerr))
+			} else {
+				body, _ := io.ReadAll(resp.Body)
+				resp.Body.Close()
+
+				var rdsDesc struct {
+					DBInstances []struct {
+						DBInstanceStatus string `xml:"DBInstanceStatus"`
+						Endpoint         struct {
+							Address string `xml:"Address"`
+							Port    int    `xml:"Port"`
+						} `xml:"Endpoint"`
+					} `xml:"DescribeDBInstancesResult>DBInstances>DBInstance"`
+				}
+				xml.Unmarshal(body, &rdsDesc)
+
+				status := "unknown"
+				if len(rdsDesc.DBInstances) > 0 {
+					status = rdsDesc.DBInstances[0].DBInstanceStatus
+					if rdsDesc.DBInstances[0].Endpoint.Address != "" {
+						host = rdsDesc.DBInstances[0].Endpoint.Address
+					}
+				}
+
+				elapsed := time.Since(startTime).Round(time.Second)
+				elapsedMins := int(elapsed.Minutes())
+				elapsedSecs := int(elapsed.Seconds()) % 60
+
+				ae.addLog(fmt.Sprintf("  RDS DescribeDBInstances →  %s  status: %s  (poll #%d)", id, status, attempt))
+				fmt.Printf("          [⏳] AWS RDS: Server is spinning up. Status: %s (Attempt %d/%d - elapsed: %dm %ds)\n",
+					strings.ToUpper(status), attempt, maxAttempts, elapsedMins, elapsedSecs)
+
+				if strings.ToLower(status) == "available" {
+					elapsed = time.Since(startTime).Round(time.Second)
+					fmt.Printf("          [⚡] AWS RDS: Instance is AVAILABLE! (Attempt %d/%d - elapsed: %s) ✓\n",
+						attempt, maxAttempts, elapsed)
+					ae.addLog(fmt.Sprintf("  RDS DescribeDBInstances →  %s  status: AVAILABLE  host: %s", id, host))
+					return host, nil
+				}
+			}
+		}
+
+		// Wait before next poll (last attempt — don't sleep unnecessarily)
+		if attempt < maxAttempts {
+			time.Sleep(pollInterval)
+		}
+	}
+
+	return host, fmt.Errorf("AWS RDS instance '%s' did not become available within %d attempts (%s)",
+		id, maxAttempts, time.Since(startTime).Round(time.Second))
 }
 
 // stepCreateS3Bucket calls S3 CreateBucket (real or simulated).
