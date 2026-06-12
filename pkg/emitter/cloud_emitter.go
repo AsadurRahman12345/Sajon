@@ -43,6 +43,7 @@ type CloudResult struct {
 	ResourceName     string // original Sajon resource name  (e.g. "user_db")
 	ProjectID        string // Neon-assigned project ID       (e.g. "proj_abc123")
 	ProjectName      string // project name sent to Neon      (e.g. "sajon-user-db")
+	Region           string // Neon region                    (e.g. "aws-ap-south-1")
 	Host             string // serverless host                (e.g. "ep-xxx.aws.neon.tech")
 	PoolerHost       string // connection-pooler host
 	Database         string // default database name          (e.g. "neondb")
@@ -207,6 +208,7 @@ func (ce *CloudEmitter) ProvisionAll() error {
 				ResourceName:     rs.Name,
 				ProjectID:        cached.ProjectID,
 				ProjectName:      "sajon-" + strings.ReplaceAll(rs.Name, "_", "-"),
+				Region:           cached.Region, // FIX: restore persisted region from lock
 				Host:             cached.Host,
 				PoolerHost:       cached.PoolerHost,
 				Database:         cached.Database,
@@ -265,6 +267,7 @@ func (ce *CloudEmitter) ProvisionAll() error {
 			PoolerHost:       result.PoolerHost,
 			Database:         result.Database,
 			User:             result.User,
+			Region:           propValue(rs, "region"), // FIX: persist region so cached path can display it
 			Status:           "active",
 		}
 		if writeErr := ce.lockFile.UpsertResource(rs.Name, lr); writeErr != nil {
@@ -374,6 +377,7 @@ func (ce *CloudEmitter) provisionNeonProject(rs *parser.ResourceStatement) (*Clo
 		ResourceName:     rs.Name,
 		ProjectID:        neonResp.Project.ID,
 		ProjectName:      neonResp.Project.Name,
+		Region:           propValue(rs, "region"), // store the user-facing region string
 		Host:             params.Host,
 		PoolerHost:       params.PoolerHost,
 		Database:         params.Database,

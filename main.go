@@ -1152,11 +1152,16 @@ func runCloudProvision(program *parser.Program, apiKey, sep string, force bool) 
 			fmt.Printf("     %s  %s\n",
 				colorize(ansiCyan, "Project ID:"), colorize(ansiWhite, result.ProjectID))
 			fmt.Printf("     %s  %s\n",
+				colorize(ansiCyan, "Region    :"), colorize(ansiWhite, result.Region))
+			fmt.Printf("     %s  %s\n",
 				colorize(ansiCyan, "Host      :"), colorize(ansiWhite, result.Host))
 			fmt.Printf("     %s  %s\n",
 				colorize(ansiCyan, "Database  :"), colorize(ansiWhite, result.Database))
 			fmt.Printf("     %s  %s\n",
 				colorize(ansiCyan, "User      :"), colorize(ansiWhite, result.User))
+			fmt.Printf("     %s  %s\n",
+				colorize(ansiCyan, "Dashboard :"),
+				colorize(ansiCyan, fmt.Sprintf("https://console.neon.tech/app/projects/%s", result.ProjectID)))
 			fmt.Printf("     %s  %s\n\n",
 				colorize(ansiCyan, "Connection String:"),
 				colorize(ansiBoldGreen, result.ConnectionString))
@@ -1170,11 +1175,16 @@ func runCloudProvision(program *parser.Program, apiKey, sep string, force bool) 
 			fmt.Printf("     %s  %s\n",
 				colorize(ansiCyan, "Project ID:"), colorize(ansiWhite, result.ProjectID))
 			fmt.Printf("     %s  %s\n",
+				colorize(ansiCyan, "Region    :"), colorize(ansiWhite, result.Region))
+			fmt.Printf("     %s  %s\n",
 				colorize(ansiCyan, "Host      :"), colorize(ansiWhite, result.Host))
 			fmt.Printf("     %s  %s\n",
 				colorize(ansiCyan, "Database  :"), colorize(ansiWhite, result.Database))
 			fmt.Printf("     %s  %s\n",
 				colorize(ansiCyan, "User      :"), colorize(ansiWhite, result.User))
+			fmt.Printf("     %s  %s\n",
+				colorize(ansiCyan, "Dashboard :"),
+				colorize(ansiCyan, fmt.Sprintf("https://console.neon.tech/app/projects/%s", result.ProjectID)))
 			fmt.Printf("     %s  %s\n\n",
 				colorize(ansiCyan, "Connection String:"),
 				colorize(ansiBoldGreen, result.ConnectionString))
